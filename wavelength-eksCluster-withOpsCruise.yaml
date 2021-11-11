@@ -1,4 +1,5 @@
-##5G Edge CloudFormation Template for EKS | Author: Robert Belson, Verizon 5G Edge Team
+## 5G Edge CloudFormation Template for EKS with OpsCruise Built-In
+## Authors: Robert Belson - Verizon 5G Edge Team, Cesar Quintana - OpsCruise Team
 Metadata:
   License: Apache 2.0
 Description:  'This template creates an EKS Cluster with a Node Group in a Wavelength Zone.
@@ -89,10 +90,15 @@ Parameters:
       - r5.2xlarge
       - g4dn.2xlarge
 
-  HelmExecutionRole:
+  AWSQSEKSExecutionRole:
     Type: String
-    Description: The ARN of the Helm Execution Role attached to the AWSQS::Kubernetes::Helm resource provider.
-    Default: ""
+    Description: The ARN of the Execution Role attached to the AWSQS::EKS::Cluster resource provider.
+    Default: !Ref 'AWS::NoValue'
+
+  AWSQSHelmExecutionRole:
+    Type: String
+    Description: The ARN of the Execution Role attached to the AWSQS::Kubernetes::Helm resource provider.
+    Default: !Ref 'AWS::NoValue'
 
   OpsCruiseValuesURL:
     Type: String
@@ -112,7 +118,44 @@ Mappings:
     aws-iso-b:
       EC2ServicePrincipal: "ec2.sc2s.sgov.gov"
 
+Conditions:
+  EKSExecRoleEmpty: !Equals 
+    - !Ref AWSQSEKSExecutionRole
+    - !Ref 'AWS::NoValue'
+
+  HelmExecRoleEmpty: !Equals 
+    - !Ref AWSQSHelmExecutionRole
+    - !Ref 'AWS::NoValue'
+
 Resources:
+  #AWSQS EKS Cluster Resource Execution Role and Type Activation
+  AWSQSEKSExecutionRole:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://wavelength-cloudformation-templates.s3.us-west-2.amazonaws.com/awsqs-eksCluster-execRole.yaml
+    Condition: EKSExecRoleEmpty
+
+  AWSQSEKSTypeActivation: 
+    Type: AWS::CloudFormation::TypeActivation
+    Properties: 
+      AutoUpdate: true
+      ExecutionRoleArn: !Ref AWSQSEKSExecutionRole
+      PublicTypeArn: !Sub 'arn:aws:cloudformation:${AWS::Region}::type/resource/408988dff9e863704bcc72e7e13f8d645cee8311/AWSQS-EKS-Cluster'
+
+  #AWSQS Helm Command Resource Execution Role and Type Activation
+  AWSQSHelmExecutionRole:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://wavelength-cloudformation-templates.s3.us-west-2.amazonaws.com/awsqs-helm-execRole.yaml
+    Condition: HelmExecRoleEmpty
+
+  AWSQSHelmTypeActivation: 
+    Type: AWS::CloudFormation::TypeActivation
+    Properties: 
+      AutoUpdate: true
+      ExecutionRoleArn: !Ref AWSQSEKSExecutionRole
+      PublicTypeArn: !Sub 'arn:aws:cloudformation:${AWS::Region}::type/resource/408988dff9e863704bcc72e7e13f8d645cee8311/AWSQS-Kubernetes-Helm'
+
   #Start with single VPC in user-selected region
   VPC:
     Type: AWS::EC2::VPC
@@ -123,6 +166,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}
+
  #Carrier gateway access for carrier subnet in Wavelength Zone
   CarrierGateway:
     Type: AWS::EC2::CarrierGateway
@@ -131,6 +175,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}
+
   #Internet gateway access for public subnet in Availability Zone
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -198,6 +243,7 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref AvailabilityZone2
+
   #Wavelength Zone Routing
   CarrierRouteTable:
     Type: AWS::EC2::RouteTable
@@ -295,15 +341,14 @@ Resources:
             Username: "CliUser"
             Groups: ["system:masters"]
         Roles:
-          - Arn: !Ref HelmExecutionRole
-            Username: "HelmExecutionRole"
+          - Arn: !Ref AWSQSHelmExecutionRole
+            Username: "AWSQSHelmExecutionRole"
             Groups: ["system:masters"]
           - Arn: !GetAtt NodeInstanceRole.Arn
             Username: system:node:{{EC2PrivateDNSName}}
             Groups:
               - system:bootstrappers
               - system:nodes
-
 
   #VPC Endpoints
   S3GatewayEndpoint:
@@ -379,8 +424,8 @@ Resources:
             - !GetAtt EKSCluster.CertificateAuthorityData
             - --capabilities
             - CAPABILITY_NAMED_IAM
-            - --kubelet-extra-args
-            - --node-labels=prometheus=yes
+#            - --kubelet-extra-args
+#            - --node-labels=prometheus=yes
         NodeInstanceRole: !Ref NodeInstanceRole
 
   #OpsCruise
@@ -416,23 +461,6 @@ Resources:
       Values:
         tags.opscruise: false
       ValueOverrideURL: !Ref OpsCruiseValuesURL
-
-  Loki:
-    DependsOn: EKSNodeGroup
-    Type: "AWSQS::Kubernetes::Helm"
-    Properties:
-      ClusterID: !Ref EKSCluster
-      Name: loki
-      Namespace: collectors
-      Repository: https://grafana.github.io/helm-charts
-      Chart: grafana/loki-stack
-      TimeOut: 4
-      Values:
-        grafana.enabled: false
-        prometheus.enabled: false
-        prometheus.alertmanager.persistentVolume.enabled: false
-        prometheus.server.persistentVolume.enabled: false
-
 
 Outputs:
   ClusterName:
