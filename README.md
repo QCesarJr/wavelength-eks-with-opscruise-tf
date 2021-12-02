@@ -33,7 +33,6 @@ aws cloudformation deploy \
     --stack-name AWSEKSTypeActivation \
     --capabilities CAPABILITY_NAMED_IAM
 
-## Create an EKS Cluster in Wavelength (ETA ~15 minutes).
 ## To create additional clusters, only run the commands below.
 
 # Deploy the EKS Cluster in Wavelength with OpsCruise.
