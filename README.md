@@ -24,24 +24,26 @@ These commands should be run through the aws cli (download here: https://docs.aw
 NOTE: The stack-name assumes linux for substitution. If substitution is not working, replace \$(date +%b%d%Y_%H%M) portion in the "--stack-name" parameter. Also, replace OpsCruiseValuesURL, EKSClusterAdminArn, and EKSClusterAdminArn ParameterValues with your actual values.
 
 ```
-## NOTE: Only run this command once. It creates IAM roles for the execution of, and activates the, AWSQS Helm and EKS Cluster Types, which only needs to be done
-## once. The output of this command is the Helm Execution IAM Role ARN which you'll need to pass to the next command's "AWSQSHelmExecutionRole" parameter.
+## NOTE: Only run this command once. It creates IAM roles and activates the
+## AWSQS Helm and EKS Cluster Types, which only needs to be done once.
+## This outputs the Helm Role ARN. Use the ARN in the AWSQSHelmExecutionRole parameter.
 
 aws cloudformation deploy \
     --template-file /Users/qcesarjr/vzw-wavelength-cf-templates/awsqseks-helm-typeactivation.yaml.packaged.yml \
     --stack-name AWSEKSTypeActivation \
     --capabilities CAPABILITY_NAMED_IAM
 
-## The commands below create an EKS Cluster in Wavelength (the whole process takes about 15 minutes). To create multiple clusters, you only need the commands below.
-## The command above should only be run once.
+## Create an EKS Cluster in Wavelength (ETA ~15 minutes).
+## To create additional clusters, only run the commands below.
 
 # Deploy the EKS Cluster in Wavelength with OpsCruise.
-# Change OpsCruiseValuesURL, EKSClusterAdminArn,EKSClusterAdminName, and AWSQSHelmExecutionRole (output from first command) values
+# Change OpsCruiseValuesURL, EKSClusterAdminArn, EKSClusterAdminName,
+# and AWSQSHelmExecutionRole (output from first command) parameters
 
 EKSwOCStackName=eksCluster-wOpsCruise-$(date +%b%d%Y-%H%M)
 
 aws cloudformation deploy --template-file /Users/qcesarjr/vzw-wavelength-cf-templates/wavelength-eksCluster-withOpsCruise.packaged.yml \
-    --stack-name  $EKSwOCStackName \
+    --stack-name $EKSwOCStackName \
     --capabilities CAPABILITY_NAMED_IAM \
     --parameter-overrides \
         OpsCruiseValuesURL="S3_URL_TO_OPSCRUISE_VALUES_YAML" \
