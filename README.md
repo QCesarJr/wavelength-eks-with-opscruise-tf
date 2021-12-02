@@ -1,44 +1,55 @@
-WavelengthCloudFormation README
+# Deploy EKS Cluster with Worker Nodes in Wavelength Zone
 
-These commands can be run either through the aws cli (download here: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) or by uploading the cloud formation script into the AWS CloudFormation UI and providing the Parameters.
+These commands should be run through the aws cli (download here: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Uploading the CloudFormation script into the AWS CloudFormation UI and providing the Parameters.
 
-#Create AWSQS Custom Resource Provider Execution Roles for Helm and EKS
-aws cloudformation create-stack \
-    --stack-name "AWSQS-Helm-EKS-ResourceProvider-Roles" \
-    --template-url https://wavelength-cloudformation-templates.s3.us-west-2.amazonaws.com/awsqs-helm-eks-extensionRoles.yaml \
+# Getting Started
+1. Go to https://opscruise.com/free-forever and sign up for an OpsCruise account.
+
+![OpsCruise Registration](./README_images/OpsCruise_Registration.png)
+
+2. Once your OpsCruise instance has been created, log in to your OpsCruise instance
+3. Click on your **user name** in the upper right corner, then **Deployment Guide**
+4. Click on **Download YAML File**
+
+![OpsCruise Deployment Guide](./README_images/OpsCruise_DeploymentGuide.png)
+
+5. In Section 2 of the Deployment guide, select **AWS**, then **Amazon Linux**, and follow the instructions to create an IAM role in order to allow OpsCruise to query AWS
+
+![OpsCruise Deployment Guide AWS](./README_images/OpsCruise_DeploymentGuideAWS.png)
+
+6. Upload your opscruise-values.yaml to an S3 bucket and have the URL handy (you’ll need it in Step 7)
+7. Run the following commands:
+
+
+NOTE: The stack-name assumes linux for substitution. If substitution is not working, replace \$(date +%b%d%Y_%H%M) portion in the "--stack-name" parameter. Also, replace OpsCruiseValuesURL, EKSClusterAdminArn, and EKSClusterAdminArn ParameterValues with your actual values.
+
+```
+## NOTE: Only run this command once. It creates IAM roles for the execution of, and activates the, AWSQS Helm and EKS Cluster Types, which only needs to be done
+## once. The output of this command is the Helm Execution IAM Role ARN which you'll need to pass to the next command's "AWSQSHelmExecutionRole" parameter.
+
+aws cloudformation deploy \
+    --template-file /Users/qcesarjr/vzw-wavelength-cf-templates/awsqseks-helm-typeactivation.yaml.packaged.yml \
+    --stack-name AWSEKSTypeActivation \
     --capabilities CAPABILITY_NAMED_IAM
 
-#Set EKS Execution Role ARN to variable
-export AWSQS_EKSRole=$(aws cloudformation describe-stacks \
-        --stack-name "AWSQS-Helm-EKS-ResourceProvider-Roles" \
-        --query "Stacks[0].Outputs[?OutputKey=='AWSQSEKSExecutionRoleArn'].OutputValue" --output text)
+## The commands below create an EKS Cluster in Wavelength (the whole process takes about 15 minutes). To create multiple clusters, you only need the commands below.
+## The command above should only be run once.
 
-#Set Helm Execution Role ARN to variable
-export AWSQS_HelmRole=$(aws cloudformation describe-stacks \
-        --stack-name "AWSQS-Helm-EKS-ResourceProvider-Roles" \
-        --query "Stacks[0].Outputs[?OutputKey=='AWSQSHelmExecutionRoleArn'].OutputValue" --output text)
+# Deploy the EKS Cluster in Wavelength with OpsCruise.
+# Change OpsCruiseValuesURL, EKSClusterAdminArn,EKSClusterAdminName, and AWSQSHelmExecutionRole (output from first command) values
 
-# Activate AWSQS::EKS::Cluster Resource-Type
-## Only need to run once per region
-aws cloudformation activate-type \
-    --public-type-arn "arn:aws:cloudformation:$(aws configure get region)::type/resource/408988dff9e863704bcc72e7e13f8d645cee8311/AWSQS-EKS-Cluster" \
-    --execution-role-arn $AWSQS_EKSRole
+EKSwOCStackName=eksCluster-wOpsCruise-$(date +%b%d%Y-%H%M)
 
-# Activate AWSQS::Kubernetes::Helm Resource-Type
-## Only need to run once per region
-aws cloudformation activate-type \
-    --public-type-arn "arn:aws:cloudformation:$(aws configure get region)::type/resource/408988dff9e863704bcc72e7e13f8d645cee8311/AWSQS-Kubernetes-Helm" \
-    --execution-role-arn $AWSQS_HelmRole
-
-#Deploy EKS Cluster with Worker Nodes in Wavelength Zone
-aws cloudformation create-stack \
-    --stack-name wl-eks-nov2-1206 \
-    --template-url https://wavelength-cloudformation-templates.s3.us-west-2.amazonaws.com/wavelength-eksCluster-withOpsCruise.yaml \
-    --disable-rollback \
+aws cloudformation deploy --template-file /Users/qcesarjr/vzw-wavelength-cf-templates/wavelength-eksCluster-withOpsCruise.packaged.yml \
+    --stack-name  $EKSwOCStackName \
     --capabilities CAPABILITY_NAMED_IAM \
-    --parameters \
-        ParameterKey=OpsCruiseValuesURL,ParameterValue="s3://wavelength-cloudformation-templates/cesarquintana-vzpayrch-opscruise-values.yaml" \
-        ParameterKey=WavelengthZoneGeo,ParameterValue=us-west-2-wl1-las-wlz-1 \
-        ParameterKey=ParentRegionGeo,ParameterValue=us-west-2a \
-        ParameterKey=ParentRegion2Geo,ParameterValue=us-west-2b \
-        ParameterKey=HelmExecutionRole,ParameterValue="$AWSQS_HelmRole"
+    --parameter-overrides \
+        OpsCruiseValuesURL="S3_URL_TO_OPSCRUISE_VALUES_YAML" \
+        EKSClusterAdminArn=$ARN_FOR_EKS_CLUSTER_ADMIN_USER \
+        EKSClusterAdminName=$CLUSTER_ADMIN_USERNAME \
+        OpsCruiseGWVersion=3.1.1 \
+        OpsCruiseCollectorsVersion=3.1.1 \
+        AWSQSHelmExecutionRole=$HELM_EXECUTION_ROLE
+
+# Update your kubeconfig with the created cluster's credentials
+aws eks update-kubeconfig --name ${EKSwOCStackName}-eks
